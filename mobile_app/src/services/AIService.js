@@ -1,5 +1,8 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import NetInfo from '@react-native-community/netinfo';
+import { Alert } from 'react-native';
 
 class AIService {
   constructor() {
@@ -8,22 +11,25 @@ class AIService {
     this.model = 'gpt-3.5-turbo';
     this.temperature = 0.7;
     this.maxTokens = 1000;
-    
-    this.loadConfig();
+  }
+
+  async initialize() {
+    await this.loadConfig();
   }
 
   async loadConfig() {
     try {
       const savedConfig = await AsyncStorage.getItem('@aura_ai_config');
+      const storedKey = await SecureStore.getItemAsync('aura_api_key');
       if (savedConfig) {
         const config = JSON.parse(savedConfig);
-        this.apiKey = config.apiKey;
         this.model = config.model || 'gpt-3.5-turbo';
         this.temperature = config.temperature || 0.7;
         this.maxTokens = config.maxTokens || 1000;
       }
+      this.apiKey = storedKey;
     } catch (error) {
-      console.error('Failed to load AI config:', error);
+      Alert.alert('Error', 'Secure storage is not available.');
     }
   }
 
@@ -32,9 +38,15 @@ class AIService {
       throw new Error('AI API key not configured. Please set it in Settings.');
     }
 
-    const requestMessages = systemPrompt 
+    const requestMessages = systemPrompt
       ? [{ role: 'system', content: systemPrompt }, ...messages]
       : messages;
+
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      const last = messages.length > 0 ? messages[messages.length - 1].content : '';
+      return this.getOfflineResponse(last);
+    }
 
     try {
       const response = await axios.post(
@@ -56,16 +68,19 @@ class AIService {
       return response.data.choices[0].message.content;
     } catch (error) {
       console.error('AI API Error:', error);
-      
+
       if (error.response?.status === 401) {
         throw new Error('Invalid API key. Please check your configuration.');
       } else if (error.response?.status === 429) {
         throw new Error('Rate limit exceeded. Please try again later.');
-      } else if (!navigator.onLine) {
-        // Fallback to cached responses when offline
-        return this.getOfflineResponse(messages[messages.length - 1].content);
+      } else {
+        const state = await NetInfo.fetch();
+        if (!state.isConnected) {
+          const last = messages.length > 0 ? messages[messages.length - 1].content : '';
+          return this.getOfflineResponse(last);
+        }
       }
-      
+
       throw new Error('Failed to get AI response. Please try again.');
     }
   }

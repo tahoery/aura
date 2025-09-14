@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +11,7 @@ import CameraScreen from './src/screens/CameraScreen';
 import VoiceScreen from './src/screens/VoiceScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import AIService from './src/services/AIService';
 
 // Theme configuration
 const theme = {
@@ -31,6 +32,25 @@ function TabIcon({ name, color, size }) {
 }
 
 export default function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await AIService.initialize();
+      } catch (e) {
+        console.error('AIService initialization failed', e);
+      } finally {
+        setReady(true);
+      }
+    };
+    init();
+  }, []);
+
+  if (!ready) {
+    return null;
+  }
+
   return (
     <PaperProvider theme={theme}>
       <NavigationContainer>
