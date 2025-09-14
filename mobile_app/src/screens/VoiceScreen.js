@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from 'react-native';
 import { Button, Card, Title, Paragraph, Switch } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +15,7 @@ export default function VoiceScreen() {
   const [recording, setRecording] = useState(null);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [hasAudioPermission, setHasAudioPermission] = useState(null);
-  const pulseAnim = new Animated.Value(1);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     requestAudioPermissions();
@@ -28,6 +28,17 @@ export default function VoiceScreen() {
       stopPulseAnimation();
     }
   }, [isListening]);
+
+  useEffect(() => {
+    return () => {
+      stopPulseAnimation();
+      if (recording) {
+        try {
+          recording.stopAndUnloadAsync();
+        } catch {}
+      }
+    };
+  }, [recording]);
 
   const requestAudioPermissions = async () => {
     try {

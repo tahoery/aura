@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState({
@@ -33,6 +34,8 @@ export default function SettingsScreen() {
     maxTokens: 1000,
   });
 
+  const [apiKeyError, setApiKeyError] = useState('');
+
   const [userProfile, setUserProfile] = useState({
     name: 'User',
     email: '',
@@ -48,9 +51,20 @@ export default function SettingsScreen() {
       const savedSettings = await AsyncStorage.getItem('@aura_settings');
       const savedAiConfig = await AsyncStorage.getItem('@aura_ai_config');
       const savedProfile = await AsyncStorage.getItem('@aura_user_profile');
-      
+      let storedApiKey = '';
+      try {
+        storedApiKey = await SecureStore.getItemAsync('aura_api_key');
+      } catch (e) {
+        Alert.alert('Error', 'Secure storage is not available.');
+      }
+
       if (savedSettings) setSettings(JSON.parse(savedSettings));
-      if (savedAiConfig) setAiConfig(JSON.parse(savedAiConfig));
+      if (savedAiConfig) {
+        const config = JSON.parse(savedAiConfig);
+        setAiConfig(prev => ({ ...prev, ...config, apiKey: storedApiKey || '' }));
+      } else {
+        setAiConfig(prev => ({ ...prev, apiKey: storedApiKey || '' }));
+      }
       if (savedProfile) setUserProfile(JSON.parse(savedProfile));
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -59,10 +73,24 @@ export default function SettingsScreen() {
 
   const saveSettings = async () => {
     try {
+      if (apiKeyError || !aiConfig.apiKey) {
+        Alert.alert('Error', 'Please enter a valid API key.');
+        return;
+      }
+
+      const { apiKey, ...configToSave } = aiConfig;
+
       await AsyncStorage.setItem('@aura_settings', JSON.stringify(settings));
-      await AsyncStorage.setItem('@aura_ai_config', JSON.stringify(aiConfig));
+      await AsyncStorage.setItem('@aura_ai_config', JSON.stringify(configToSave));
       await AsyncStorage.setItem('@aura_user_profile', JSON.stringify(userProfile));
-      
+
+      try {
+        await SecureStore.setItemAsync('aura_api_key', apiKey);
+      } catch (e) {
+        Alert.alert('Error', 'Secure storage is not available.');
+        return;
+      }
+
       Alert.alert('Success', 'Settings saved successfully!');
     } catch (error) {
       Alert.alert('Error', 'Failed to save settings');
@@ -75,10 +103,10 @@ export default function SettingsScreen() {
       'Are you sure you want to reset all settings to default?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Reset', 
+        {
+          text: 'Reset',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             setSettings({
               notifications: true,
               darkMode: false,
@@ -94,6 +122,9 @@ export default function SettingsScreen() {
               temperature: 0.7,
               maxTokens: 1000,
             });
+            try {
+              await SecureStore.deleteItemAsync('aura_api_key');
+            } catch {}
             setUserProfile({
               name: 'User',
               email: '',
@@ -135,8 +166,19 @@ export default function SettingsScreen() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleApiKeyChange = (value) => {
+    const trimmed = value.trim();
+    const isValid = /^sk-[A-Za-z0-9]+$/.test(trimmed);
+    setAiConfig(prev => ({ ...prev, apiKey: trimmed }));
+    setApiKeyError(isValid ? '' : 'Invalid API key');
+  };
+
   const updateAiConfig = (key, value) => {
-    setAiConfig(prev => ({ ...prev, [key]: value }));
+    if (key === 'apiKey') {
+      handleApiKeyChange(value);
+    } else {
+      setAiConfig(prev => ({ ...prev, [key]: value }));
+    }
   };
 
   const updateProfile = (key, value) => {
@@ -213,7 +255,11 @@ export default function SettingsScreen() {
               secureTextEntry
               placeholder="Enter your AI service API key"
               style={styles.input}
+              error={!!apiKeyError}
             />
+            {apiKeyError ? (
+              <Paragraph style={styles.errorText}>{apiKeyError}</Paragraph>
+            ) : null}
             
             <View style={styles.pickerContainer}>
               <Paragraph>AI Model</Paragraph>
@@ -427,6 +473,10 @@ const styles = StyleSheet.create({
     marginLeft: 15,
   },
   input: {
+    marginBottom: 10,
+  },
+  errorText: {
+    color: '#B00020',
     marginBottom: 10,
   },
   pickerContainer: {
